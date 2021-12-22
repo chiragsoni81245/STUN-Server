@@ -2,6 +2,8 @@ from socket import *
 import os
 from threading import Thread
 from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
+from time import sleep
 
 class STUNServer:
 
@@ -12,6 +14,7 @@ class STUNServer:
 		self.socket_obj.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self._conn_handler_thread_pool = ThreadPoolExecutor(10)
 		self.connections = []
+		self.received_data = {}
 
 	def bind(self):
 		'''
@@ -21,41 +24,56 @@ class STUNServer:
 		try:
 			print("Binding to port {} ...".format(self.port))
 			self.socket_obj.bind(( self.host, self.port ))
-			
-			# One argument is listen function is the no. of unaccepted connection allowed before refusing new connections
-			print("Listening...")
-			self.socket_obj.listen(5)
+
 		except socket.error as msg:
 			print("Socket Binding error {}".format(str(msg)))
 			print("Retrying...")
 			self.bind()
 
-	def accept_connections(self):
+	def start(self):
 		'''
 			This function is for Establishing Connections before that socket must be listening
 		'''
+		self.bind()
 		try:
+			thread = self._conn_handler_thread_pool.submit(self.receiver)
 			while True:
-				conn, address = self.socket_obj.accept()
-				print("Connection has been established! | {}:{}".format(address[0],address[1]))
-				thread = self._conn_handler_thread_pool.submit(
-					self.conn_handler, 
-					conn, address
-				)
-				self.connections.append(thread)
-		except:
-			print("Error in accepting connections")
+				keys = self.received_data.keys()
+				has_to_be_deleted_keys = []
+				for address in keys:
+					if len(self.received_data[address][0])>6:
+						has_to_be_deleted_keys.append(address)
+					if self.received_data[address][1]:
+						if self.received_data[address][0].decode('utf-8')=="whoami":
+							response = "{}:{}\0".format(address[0], address[1])
+							for i in response:
+								self.socket_obj.sendto(i.encode('utf-8'), address)
+							has_to_be_deleted_keys.append(address)
+						else:
+							has_to_be_deleted_keys.append(address)
 
-	def conn_handler(self, conn, address):
-		response = "{}:{}\0".format(address[0], address[1])
-		response = str.encode(response, 'utf-8')
-		conn.send(response)
-		conn.close()
-		print("Clossed connection of {}:{}".format(address[0], address[1]))
+				for key in has_to_be_deleted_keys:
+					del self.received_data[key]
+				sleep(0.01)
+
+		except Exception as error:
+			print("Error in starting:")
+			print(error)
+
+	def receiver(self):
+		while True:
+			temp, address = self.socket_obj.recvfrom(1)
+			while temp!=b'\x00':
+				if address in self.received_data:
+					if not self.received_data[address][1]:
+						self.received_data[address][0] += temp
+				else:
+					self.received_data[address] = [temp, False]
+				temp, address = self.socket_obj.recvfrom(1)
+			self.received_data[address][1] = True
 
 if __name__=="__main__":
 	s1 = STUNServer("0.0.0.0", 3478)
-	s1.bind()
-	s1.accept_connections()
+	s1.start()
 	
 
