@@ -8,7 +8,7 @@ class STUNServer:
 	def __init__(self, host, port):
 		self.host = host
 		self.port = port
-		self.socket_obj = socket(family=AF_INET, type=SOCK_STREAM)
+		self.socket_obj = socket(family=AF_INET, type=SOCK_DGRAM)
 		self.socket_obj.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		self._conn_handler_thread_pool = ThreadPoolExecutor(10)
 		self.connections = []
